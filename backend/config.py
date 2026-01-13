@@ -32,11 +32,15 @@ class Settings:
     CONVERSION_THRESHOLD: int = 70  # 0-100 score to trigger nudge
     MIN_RELEVANCE_SCORE: float = 0.7  # Minimum ad relevance (70%)
     
+    SERP_API_KEY: str = os.getenv("SERP_API_KEY", "")
+    
     @classmethod
     def validate(cls) -> bool:
         """Validate required settings are present."""
         if not cls.GOOGLE_API_KEY:
             raise ValueError("GOOGLE_API_KEY is required. Set it in .env file.")
+        if not cls.SERP_API_KEY:
+            print("Warning: SERP_API_KEY not found. Search grounding will be disabled.")
         return True
 
 

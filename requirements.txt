@@ -12,6 +12,9 @@ google-cloud-aiplatform>=1.38.0
 # Environment
 python-dotenv>=1.0.0
 
+# HTTP Client (for SERP API)
+httpx>=0.26.0
+
 # Future phases
 # google-ads>=23.0.0
 # graphql-core>=3.2.0

@@ -39,6 +39,7 @@ class IntentAnalysis(BaseModel):
     propensity_score: int = Field(..., ge=0, le=100)
     detected_entities: list[str] = Field(default_factory=list)
     recommended_category: Optional[str] = None
+    grounding_data: Optional[str] = None
     reasoning: Optional[str] = None
 
 

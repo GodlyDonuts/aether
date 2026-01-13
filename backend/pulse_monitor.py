@@ -1,0 +1,303 @@
+"""
+Project AXON — Enhanced Pulse Monitor
+Detects usage patterns across conversation turns.
+Triggers nudges after repeated similar queries (e.g., 4-5 calculus equations).
+"""
+
+import json
+from collections import Counter
+from backend.gemini_client import gemini
+from backend.config import settings
+from backend.models import IntentAnalysis, IntentBucket, StruggleState, Message
+
+
+# Pattern detection thresholds
+REPEATED_QUERY_THRESHOLD = 4  # Trigger nudge after this many similar queries
+TOPIC_CLUSTER_THRESHOLD = 0.7  # Similarity threshold for topic clustering
+
+
+PATTERN_ANALYSIS_PROMPT = """
+You are the AXON Pattern Analyzer. Analyze the FULL conversation history for usage patterns.
+
+CONVERSATION HISTORY:
+{conversation}
+
+ANALYSIS TASKS:
+
+1. **Topic Clustering**: Group messages by topic. Identify if user keeps asking about the same subject.
+   Examples: calculus equations, coding questions, recipe ideas, travel planning
+
+2. **Query Type Detection**: Is this a "homework help" pattern?
+   - User sending equations/problems one after another
+   - User asking "solve this", "what's the answer to", "help with"
+   - Repetitive Q&A without deeper learning
+
+3. **Usage Pattern**: What pattern best describes this session?
+   - BROWSING: Just exploring, casual questions
+   - LEARNING: Genuine learning, asking follow-ups to understand
+   - GRINDING: Repeated similar questions, treating AI as homework solver
+   - SHOPPING: Researching products/services
+   - URGENT: Time-sensitive need, exam prep, deadline
+
+4. **Topic Repeat Count**: How many questions are about the SAME specific topic?
+   (e.g., "calculus integrals" = 3 questions, "python errors" = 2 questions)
+
+5. **Commercial Opportunity**: Is there a natural opportunity to recommend:
+   - A learning tool/course (if GRINDING or LEARNING pattern)
+   - A product (if SHOPPING pattern)
+   - A service (if URGENT pattern)
+
+Respond with ONLY valid JSON:
+{{
+    "primary_topic": "the main topic being discussed",
+    "topic_repeat_count": number of questions on this topic,
+    "usage_pattern": "BROWSING|LEARNING|GRINDING|SHOPPING|URGENT",
+    "is_homework_pattern": true/false,
+    "detected_subjects": ["subject1", "subject2"],
+    "commercial_opportunity": "description of potential ad/recommendation or null",
+    "propensity_score": 0-100,
+    "reasoning": "brief explanation"
+}}
+"""
+
+
+SINGLE_MESSAGE_PROMPT = """
+Quickly classify this single message for basic intent:
+
+MESSAGE: {message}
+
+Respond with ONLY valid JSON:
+{{
+    "intent_bucket": "educational|commercial|navigational|transactional",
+    "detected_entities": ["entity1", "entity2"],
+    "is_question": true/false,
+    "is_equation_or_problem": true/false
+}}
+"""
+
+
+class PulseMonitor:
+    """
+    Enhanced Pulse Monitor with pattern detection.
+    Tracks usage patterns across conversation turns.
+    """
+    
+    def __init__(self):
+        self.model = settings.PULSE_MONITOR_MODEL
+    
+    async def analyze(self, messages: list[Message]) -> IntentAnalysis:
+        """
+        Analyze conversation for patterns and intent.
+        Uses different strategies based on conversation length.
+        """
+        if len(messages) < 3:
+            # Early conversation: use quick single-message analysis
+            return await self._quick_analyze(messages[-1] if messages else None)
+        
+        # Longer conversation: use full pattern analysis
+        return await self._pattern_analyze(messages)
+    
+    async def _quick_analyze(self, message: Message | None) -> IntentAnalysis:
+        """Quick analysis for short conversations."""
+        if not message:
+            return self._default_analysis()
+        
+        try:
+            prompt = SINGLE_MESSAGE_PROMPT.format(message=message.content)
+            response = await gemini.generate(
+                prompt=prompt,
+                model=self.model,
+                temperature=0.1,
+                max_tokens=200,
+            )
+            
+            data = self._parse_json(response)
+            
+            return IntentAnalysis(
+                intent_bucket=IntentBucket(data.get("intent_bucket", "educational")),
+                struggle_state=StruggleState.NONE,
+                propensity_score=10,  # Low score for early messages
+                detected_entities=data.get("detected_entities", []),
+                reasoning="Early conversation - building context",
+            )
+        except Exception as e:
+            return self._default_analysis(f"Quick analysis error: {e}")
+    
+    async def _pattern_analyze(self, messages: list[Message]) -> IntentAnalysis:
+        """Full pattern analysis for longer conversations."""
+        conversation = self._format_conversation(messages)
+        prompt = PATTERN_ANALYSIS_PROMPT.format(conversation=conversation)
+        
+        try:
+            response = await gemini.generate(
+                prompt=prompt,
+                model=self.model,
+                temperature=0.2,
+                max_tokens=500,
+            )
+            
+            data = self._parse_json(response)
+            
+            # Calculate propensity based on patterns
+            propensity = self._calculate_pattern_propensity(data)
+            
+            # Determine struggle state from usage pattern
+            struggle = self._pattern_to_struggle(data.get("usage_pattern", "BROWSING"))
+            
+            # Determine intent bucket
+            intent = self._pattern_to_intent(data)
+            
+            # GROUNDING: If commercial opportunity or high propensity, use SERP
+            grounding_text = None
+            if propensity >= 60 or intent in [IntentBucket.COMMERCIAL, IntentBucket.TRANSACTIONAL]:
+                from backend.serp_client import serp_client
+                opportunity = data.get("commercial_opportunity") or ""
+                subjects = data.get("detected_subjects", [])
+                
+                # Formulate a search query
+                if opportunity:
+                    query = f"buy {opportunity}"
+                elif subjects:
+                    query = f"buy {subjects[0]}"
+                else:
+                    query = None
+                
+                if query:
+                    print(f"Grounding intent with SERP query: {query}")
+                    search_results = await serp_client.search(query, search_type="shopping")
+                    grounding_text = serp_client.extract_shopping_data(data=search_results)
+            
+            return IntentAnalysis(
+                intent_bucket=intent,
+                struggle_state=struggle,
+                propensity_score=propensity,
+                detected_entities=data.get("detected_subjects", []),
+                recommended_category=data.get("commercial_opportunity"),
+                grounding_data=grounding_text,
+                reasoning=data.get("reasoning", ""),
+            )
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return self._default_analysis(f"Pattern analysis error: {e}")
+    
+    def _calculate_pattern_propensity(self, data: dict) -> int:
+        """
+        Calculate propensity score based on detected patterns.
+        Key insight: Repeated queries = higher propensity for tool/course recommendation.
+        """
+        base_score = data.get("propensity_score", 30)
+        topic_count = data.get("topic_repeat_count", 0)
+        pattern = data.get("usage_pattern", "BROWSING")
+        is_homework = data.get("is_homework_pattern", False)
+        
+        # Boost for repeated questions (THE KEY FEATURE)
+        if topic_count >= REPEATED_QUERY_THRESHOLD:
+            base_score += 40  # Major boost after 4+ similar questions
+        elif topic_count >= 3:
+            base_score += 20  # Moderate boost at 3 questions
+        elif topic_count >= 2:
+            base_score += 10  # Small boost at 2 questions
+        
+        # Pattern-based adjustments
+        pattern_boosts = {
+            "GRINDING": 25,   # Homework grinding = needs a tool
+            "URGENT": 20,     # Urgent = willing to pay
+            "LEARNING": 10,   # Learning = might want a course
+            "SHOPPING": 30,   # Already shopping
+            "BROWSING": 0,    # Just browsing
+        }
+        base_score += pattern_boosts.get(pattern, 0)
+        
+        # Homework pattern boost
+        if is_homework:
+            base_score += 15
+        
+        return min(base_score, 100)
+    
+    def _pattern_to_struggle(self, pattern: str) -> StruggleState:
+        """Map usage pattern to struggle state."""
+        mapping = {
+            "GRINDING": StruggleState.HIGH,      # Grinding = struggling
+            "URGENT": StruggleState.HIGH,        # Urgent = stressed
+            "LEARNING": StruggleState.MODERATE,  # Learning = working on it
+            "SHOPPING": StruggleState.MILD,      # Shopping = has a need
+            "BROWSING": StruggleState.NONE,      # Browsing = casual
+        }
+        return mapping.get(pattern, StruggleState.NONE)
+    
+    def _pattern_to_intent(self, data: dict) -> IntentBucket:
+        """Determine intent bucket from pattern analysis."""
+        pattern = data.get("usage_pattern", "BROWSING")
+        has_opportunity = data.get("commercial_opportunity") is not None
+        topic_count = data.get("topic_repeat_count", 0)
+        
+        # High topic count + commercial opportunity = commercial intent
+        if topic_count >= REPEATED_QUERY_THRESHOLD and has_opportunity:
+            return IntentBucket.COMMERCIAL
+        
+        if pattern == "SHOPPING":
+            return IntentBucket.TRANSACTIONAL
+        
+        if pattern in ["GRINDING", "LEARNING"]:
+            return IntentBucket.EDUCATIONAL
+        
+        return IntentBucket.EDUCATIONAL
+    
+    def _format_conversation(self, messages: list[Message]) -> str:
+        """Format messages for prompt, including message numbers."""
+        if not messages:
+            return "[No messages]"
+        
+        formatted = []
+        for i, msg in enumerate(messages[-20:], 1):
+            role = "USER" if msg.role == "user" else "ASSISTANT"
+            formatted.append(f"[{i}] {role}: {msg.content[:500]}")
+        
+        return "\n".join(formatted)
+    
+    def _parse_json(self, response: str) -> dict:
+        """Parse JSON from response, handling markdown code blocks."""
+        cleaned = response.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[1]
+            cleaned = cleaned.rsplit("```", 1)[0]
+        
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            return {}
+    
+    def _default_analysis(self, reason: str = "") -> IntentAnalysis:
+        """Return default analysis on error."""
+        return IntentAnalysis(
+            intent_bucket=IntentBucket.EDUCATIONAL,
+            struggle_state=StruggleState.NONE,
+            propensity_score=0,
+            detected_entities=[],
+            reasoning=reason or "Default analysis",
+        )
+    
+    def should_trigger_nudge(self, analysis: IntentAnalysis) -> bool:
+        """
+        Determine if nudge should be triggered.
+        
+        Triggers when:
+        - Propensity score >= threshold (70)
+        - OR commercial intent with moderate+ struggle
+        """
+        score_threshold = analysis.propensity_score >= settings.CONVERSION_THRESHOLD
+        
+        # Also trigger for commercial/transactional with any struggle
+        intent_match = analysis.intent_bucket in [
+            IntentBucket.COMMERCIAL,
+            IntentBucket.TRANSACTIONAL,
+        ]
+        has_struggle = analysis.struggle_state != StruggleState.NONE
+        
+        return score_threshold or (intent_match and has_struggle)
+
+
+# Singleton instance
+pulse_monitor = PulseMonitor()
