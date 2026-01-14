@@ -41,6 +41,8 @@ class IntentAnalysis(BaseModel):
     recommended_category: Optional[str] = None
     grounding_data: Optional[str] = None
     reasoning: Optional[str] = None
+    is_safe_for_ads: bool = True
+    safety_reason: Optional[str] = None
 
 
 class Nudge(BaseModel):

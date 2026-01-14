@@ -12,8 +12,16 @@ from backend.models import IntentAnalysis, IntentBucket, StruggleState, Message
 
 
 # Pattern detection thresholds
+# Pattern detection thresholds
 REPEATED_QUERY_THRESHOLD = 3  # Trigger nudge after this many similar queries
 TOPIC_CLUSTER_THRESHOLD = 0.7  # Similarity threshold for topic clustering
+
+# Safety Guard Blocked Topics
+BLOCKED_TOPICS = [
+    "medical_emergency", "mental_health_crisis", "self_harm",
+    "violence", "legal_advice", "financial_distress",
+    "hate_speech", "explicit_content", "dangerous_activities"
+]
 
 
 PATTERN_ANALYSIS_PROMPT = """
@@ -47,6 +55,10 @@ ANALYSIS TASKS:
    - A product (if SHOPPING pattern)
    - A service (if URGENT pattern)
 
+6. **Safety Check**: Is this topic SAFE for ads?
+   - UNSAFE: Medical/Mental Health crisis, Legal trouble, Violence, Self-Harm, Financial Ruin.
+   - SAFE: Everything else.
+
 Respond with ONLY valid JSON:
 {{
     "primary_topic": "the main topic being discussed",
@@ -56,22 +68,31 @@ Respond with ONLY valid JSON:
     "detected_subjects": ["subject1", "subject2"],
     "commercial_opportunity": "description of potential ad/recommendation or null",
     "propensity_score": 0-100,
+    "is_safe_for_ads": true/false,
+    "safety_reason": "why unsafe (e.g., 'medical emergency') or null",
     "reasoning": "brief explanation"
 }}
 """
 
 
 SINGLE_MESSAGE_PROMPT = """
-Quickly classify this single message for basic intent:
+Quickly classify this single message for basic intent AND safety.
 
 MESSAGE: {message}
+
+SAFETY RULES (CRITICAL):
+- UNSAFE: Medical emergencies, injuries, bleeding, mental health, suicide, legal disputes, lawsuits, violence.
+- SAFE: Casual shopping, homework help, innocent questions.
+- IF UNSAFE -> is_safe_for_ads = false.
 
 Respond with ONLY valid JSON:
 {{
     "intent_bucket": "educational|commercial|navigational|transactional",
     "detected_entities": ["entity1", "entity2"],
     "is_question": true/false,
-    "is_equation_or_problem": true/false
+    "is_equation_or_problem": true/false,
+    "is_safe_for_ads": true/false,
+    "safety_reason": "reason if unsafe (e.g. 'medical injury')"
 }}
 """
 
@@ -130,12 +151,19 @@ class PulseMonitor:
                 struggle = StruggleState.NONE
                 propensity = 10
 
+            # Check safety
+            is_safe = data.get("is_safe_for_ads", True)
+            if not is_safe:
+                propensity = 0  # Kill propensity if unsafe
+
             return IntentAnalysis(
                 intent_bucket=intent,
                 struggle_state=struggle,
                 propensity_score=propensity,
                 detected_entities=data.get("detected_entities", []),
                 reasoning="Quick analysis - heuristics applied",
+                is_safe_for_ads=is_safe,
+                safety_reason=data.get("safety_reason"),
             )
         except Exception as e:
             return self._default_analysis(f"Quick analysis error: {e}")
@@ -184,6 +212,12 @@ class PulseMonitor:
                     search_results = await serp_client.search(query, search_type="shopping")
                     grounding_text = serp_client.extract_shopping_data(data=search_results)
             
+            # Check Safety
+            is_safe = data.get("is_safe_for_ads", True)
+            if not is_safe:
+                propensity = 0
+                grounding_text = None # Do not ground unsafe queries
+
             return IntentAnalysis(
                 intent_bucket=intent,
                 struggle_state=struggle,
@@ -192,6 +226,8 @@ class PulseMonitor:
                 recommended_category=data.get("commercial_opportunity"),
                 grounding_data=grounding_text,
                 reasoning=data.get("reasoning", ""),
+                is_safe_for_ads=is_safe,
+                safety_reason=data.get("safety_reason"),
             )
             
         except Exception as e:
@@ -301,9 +337,14 @@ class PulseMonitor:
         Determine if nudge should be triggered.
         
         Triggers when:
+        - SAFETY CHECK PASSES (Crucial)
         - Propensity score >= threshold (70)
         - OR commercial intent with moderate+ struggle
         """
+        # PRIMARY SAFETY GUARD: Never trigger if unsafe
+        if not analysis.is_safe_for_ads:
+            return False
+
         score_threshold = analysis.propensity_score >= settings.CONVERSION_THRESHOLD
         
         # Also trigger for commercial/transactional with any struggle
