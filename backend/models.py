@@ -49,6 +49,7 @@ class Nudge(BaseModel):
     vendor_name: str
     relevance_score: float = Field(..., ge=0, le=1)
     nudge_text: str
+    link: Optional[str] = None
     call_to_action: Optional[str] = None
     local_availability: Optional[str] = None
 

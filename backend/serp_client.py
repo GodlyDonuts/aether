@@ -1,5 +1,6 @@
 import httpx
 import json
+from typing import Optional, List, Dict, Any
 from backend.config import settings
 
 class SerpClient:
@@ -12,13 +13,14 @@ class SerpClient:
     def __init__(self):
         self.api_key = settings.SERP_API_KEY
 
-    async def search(self, query: str, search_type: str = "search") -> dict:
+    async def search(self, query: str, search_type: str = "search", location: str = "United States") -> Dict[str, Any]:
         """
-        Perform a Google search via SerpApi.
+        Perform a search via SerpApi.
         
         Args:
             query: The search query.
             search_type: 'search' (web) or 'shopping'.
+            location: Geo-location for the search (e.g., 'United States', 'New York, NY')
             
         Returns:
             Dict containing search results.
@@ -30,19 +32,23 @@ class SerpClient:
             "q": query,
             "api_key": self.api_key,
             "engine": "google_shopping" if search_type == "shopping" else "google",
-            "num": 5  # We only need top results for grounding
+            "location": location,
+            "num": 5, # We only need top results for grounding
+            "google_domain": "google.com",
+            "gl": "us",
+            "hl": "en"
         }
 
         async with httpx.AsyncClient() as client:
             try:
-                response = await client.get(self.BASE_URL, params=params)
+                response = await client.get(self.BASE_URL, params=params, timeout=10.0)
                 response.raise_for_status()
                 return response.json()
             except Exception as e:
                 print(f"SERP API Error: {e}")
                 return {"error": str(e)}
 
-    def extract_shopping_data(self, char_limit: int = 1000, data: dict = {}) -> str:
+    def extract_shopping_data(self, char_limit: int = 1000, data: Dict[str, Any] = {}) -> str:
         """
         Extract relevant shopping info from raw SERP response.
         Returns a formatted string for the LLM.
@@ -58,9 +64,19 @@ class SerpClient:
                 title = item.get("title", "Unknown Product")
                 price = item.get("price", "N/A")
                 merchant = item.get("source", "Unknown Seller")
-                results.append(f"- {title} ({price}) from {merchant}")
+                rating = item.get("rating", "")
+                reviews = item.get("reviews", "")
+                
+                entry = f"- {title} ({price}) from {merchant}"
+                if rating:
+                    entry += f" [{rating} stars"
+                    if reviews:
+                        entry += f" ({reviews} reviews)"
+                    entry += "]"
+                
+                results.append(entry)
         
-        # Handle Organic Results (if used for intent verification)
+        # Handle Organic Results (fallback if used for intent verification)
         elif "organic_results" in data:
             for item in data["organic_results"][:3]:
                 title = item.get("title", "")

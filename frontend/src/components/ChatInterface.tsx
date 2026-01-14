@@ -80,7 +80,7 @@ export const ChatInterface = () => {
                 <div style={{
                     position: 'absolute',
                     top: '20px',
-                    left: '20px',
+                    left: '40px',
                     fontSize: '14px',
                     fontWeight: 600,
                     color: '#86868b',

@@ -12,7 +12,7 @@ from backend.models import IntentAnalysis, IntentBucket, StruggleState, Message
 
 
 # Pattern detection thresholds
-REPEATED_QUERY_THRESHOLD = 4  # Trigger nudge after this many similar queries
+REPEATED_QUERY_THRESHOLD = 3  # Trigger nudge after this many similar queries
 TOPIC_CLUSTER_THRESHOLD = 0.7  # Similarity threshold for topic clustering
 
 
@@ -113,12 +113,29 @@ class PulseMonitor:
             
             data = self._parse_json(response)
             
+            # Heuristic override for strong intent keywords
+            content = message.content.lower()
+            strong_intent_keywords = ["i need", "i want", "buy", "purchase", "looking for", "recommend"]
+            has_strong_intent = any(k in content for k in strong_intent_keywords)
+            
+            intent = IntentBucket(data.get("intent_bucket", "educational"))
+            
+            # If explicit commercial intent is detected
+            if has_strong_intent or intent in [IntentBucket.COMMERCIAL, IntentBucket.TRANSACTIONAL]:
+                struggle = StruggleState.MILD
+                propensity = 75  # Boost above threshold (70)
+                if intent == IntentBucket.EDUCATIONAL:
+                    intent = IntentBucket.COMMERCIAL # Upgrade bucket
+            else:
+                struggle = StruggleState.NONE
+                propensity = 10
+
             return IntentAnalysis(
-                intent_bucket=IntentBucket(data.get("intent_bucket", "educational")),
-                struggle_state=StruggleState.NONE,
-                propensity_score=10,  # Low score for early messages
+                intent_bucket=intent,
+                struggle_state=struggle,
+                propensity_score=propensity,
                 detected_entities=data.get("detected_entities", []),
-                reasoning="Early conversation - building context",
+                reasoning="Quick analysis - heuristics applied",
             )
         except Exception as e:
             return self._default_analysis(f"Quick analysis error: {e}")
@@ -194,11 +211,11 @@ class PulseMonitor:
         
         # Boost for repeated questions (THE KEY FEATURE)
         if topic_count >= REPEATED_QUERY_THRESHOLD:
-            base_score += 40  # Major boost after 4+ similar questions
+            base_score += 50  # Major boost: 30 + 50 = 80 (Guaranteed Trigger)
         elif topic_count >= 3:
-            base_score += 20  # Moderate boost at 3 questions
+            base_score += 30  # 30 + 30 = 60
         elif topic_count >= 2:
-            base_score += 10  # Small boost at 2 questions
+            base_score += 15  # 30 + 15 = 45
         
         # Pattern-based adjustments
         pattern_boosts = {

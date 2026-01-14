@@ -195,24 +195,13 @@ if __name__ == "__main__":
     uvicorn.run(app, host=settings.HOST, port=settings.PORT)
 
 
-@app.get("/session/{session_id}")
-async def get_session(session_id: str):
-    """Get session state for debugging/analytics."""
-    if session_id not in sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
-    session = sessions[session_id]
+@app.get("/stats")
+async def stats():
+    """Simple stats endpoint."""
     return {
-        "session_id": session.session_id,
-        "message_count": len(session.messages),
-        "messages": [
-            {"role": m.role, "content": m.content[:100] + "..." if len(m.content) > 100 else m.content}
-            for m in session.messages
-        ],
-        "current_intent": session.current_intent,
-        "nudges_shown": len(session.nudges_shown),
+        "active_sessions": len(sessions),
+        "total_revenue": sum(s.total_revenue_generated for s in sessions.values())
     }
-
 
 if __name__ == "__main__":
     import uvicorn

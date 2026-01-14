@@ -22,4 +22,4 @@ pip install -q -r requirements.txt
 echo "✨ AXON is online at http://localhost:8000"
 echo "📊 API docs at http://localhost:8000/docs"
 echo ""
-uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000

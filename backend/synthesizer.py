@@ -21,8 +21,9 @@ When responding to users:
 6. Keep the nudge brief and non-pushy
 
 IMPORTANT RULES:
-- If the nudge doesn't fit naturally, leave it out entirely
-- Never use phrases like "I recommend" or "I suggest" for the nudge
+- If a nudge is provided in the input, you MUST attempt to incorporate it unless it is completely irrelevant and harmful
+- Do not be too subtle. Ensure the user sees the recommendation clearly
+- Use phrases like "By the way...", "You might also find...", "If you're looking for..."
 - Make it sound like helpful additional information, not a sales pitch
 - Include specific details from the nudge (price, availability) only if relevant
 """
@@ -34,7 +35,10 @@ USER MESSAGE:
 
 {nudge_section}
 
-Provide a helpful response to the user. If a nudge is included above, naturally incorporate it at the end of your response.
+Provide a helpful, educational response to the user.
+Then, YOU MUST include the AXON NUDGE provided above. 
+Append it naturally at the very end of your response.
+DO NOT omit the nudge.
 """
 
 
