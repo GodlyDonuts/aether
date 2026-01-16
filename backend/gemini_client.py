@@ -72,6 +72,8 @@ class GeminiClient:
         )
         
         return response.text
+
+
     
     async def test_connection(self) -> dict:
         """Test the Gemini API connection."""

@@ -45,7 +45,6 @@ class ChatRequest(BaseModel):
     message: str
     session_id: str | None = None
     image: str | None = None  # Base64 encoded image
-    demo_mode: bool = False  # Force triggers for demo
 
 
 class ChatResponse(BaseModel):
@@ -115,8 +114,7 @@ async def chat(request: ChatRequest):
         # Step 1: Pulse Monitor - Analyze intent (Multimodal if image present)
         intent_analysis = await pulse_monitor.analyze(
             session.messages, 
-            image=request.image,
-            demo_mode=request.demo_mode
+            image=request.image
         )
         session.current_intent = intent_analysis
         

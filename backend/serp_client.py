@@ -48,15 +48,16 @@ class SerpClient:
                 print(f"SERP API Error: {e}")
                 return {"error": str(e)}
 
-    def extract_shopping_data(self, char_limit: int = 1000, data: Dict[str, Any] = {}) -> str:
+    def extract_shopping_data(self, char_limit: int = 1000, data: Dict[str, Any] = {}) -> Dict[str, Any]:
         """
         Extract relevant shopping info from raw SERP response.
-        Returns a formatted string for the LLM.
+        Returns a dict with formatted string and extracted images.
         """
         if "error" in data:
-            return ""
+            return {"text": "", "images": []}
 
-        results = []
+        results_text = []
+        images = []
         
         # Handle Shopping Results
         if "shopping_results" in data:
@@ -66,6 +67,10 @@ class SerpClient:
                 merchant = item.get("source", "Unknown Seller")
                 rating = item.get("rating", "")
                 reviews = item.get("reviews", "")
+                thumbnail = item.get("thumbnail")
+                
+                if thumbnail:
+                    images.append(thumbnail)
                 
                 entry = f"- {title} ({price}) from {merchant}"
                 if rating:
@@ -74,16 +79,19 @@ class SerpClient:
                         entry += f" ({reviews} reviews)"
                     entry += "]"
                 
-                results.append(entry)
+                results_text.append(entry)
         
         # Handle Organic Results (fallback if used for intent verification)
         elif "organic_results" in data:
             for item in data["organic_results"][:3]:
                 title = item.get("title", "")
                 snippet = item.get("snippet", "")
-                results.append(f"- {title}: {snippet}")
+                results_text.append(f"- {title}: {snippet}")
 
-        return "\n".join(results)[:char_limit]
+        return {
+            "text": "\n".join(results_text)[:char_limit],
+            "images": images[:2] # Limit to 2 real images
+        }
 
 # Singleton
 serp_client = SerpClient()

@@ -7,6 +7,7 @@ Fetches relevant ads and products based on user intent.
 from typing import Optional
 from backend.models import IntentAnalysis, Nudge
 from backend.serp_client import serp_client
+from backend.gemini_client import gemini as gemini_client
 
 class AXONRegistry:
     """
@@ -49,10 +50,15 @@ class AXONRegistry:
             # Use shared SerpClient for the actual API call
             data = await serp_client.search(query, search_type="shopping", location=location)
             
+            # Extract shopping data (text and images)
+            shopping_data = serp_client.extract_shopping_data(data=data)
+            shopping_text = shopping_data.get("text", "")
+            real_images = shopping_data.get("images", [])
+            
             # Check for valid results
             if not data or "error" in data:
                 # Fallback to mock data if API fails or not configured
-                mock_result = self._get_mock_result(query)
+                mock_result = self._get_mock_result(query, analysis)
                 return self._create_nudge(mock_result, analysis)
                 
             shopping_results = data.get("shopping_results", [])
@@ -60,6 +66,10 @@ class AXONRegistry:
             if shopping_results:
                 # Use the top result
                 best_match = shopping_results[0]
+                
+                # Use only real images from SERP
+                best_match["images"] = real_images
+                
                 return self._create_nudge(best_match, analysis)
             
             return None
@@ -88,6 +98,10 @@ class AXONRegistry:
             base_relevance += 0.10
         
         relevance = min(base_relevance, 1.0)
+        
+        # Handle Nudge object (if passed from mock) or Dictionary (from SERP)
+        if isinstance(result, Nudge):
+            return result
 
         # Extract link
         link = result.get("product_link") or result.get("link")
@@ -103,6 +117,7 @@ class AXONRegistry:
             link=link,
             call_to_action=f"Check it out at {result.get('source', 'the store')}",
             local_availability=result.get("local_availability", ""),
+            images=result.get("images", [])
         )
     
     def _generate_nudge_text(self, result: dict, analysis: IntentAnalysis, link: Optional[str] = None) -> str:
@@ -158,38 +173,6 @@ class AXONRegistry:
         Return mock shopping data for demo purposes if API fails/missing.
         """
         query_lower = query.lower()
-        
-        if any(word in query_lower for word in ["faucet", "plumbing", "wrench", "pipe", "repair"]):
-            # DEMO HARDCODING for Faucet/Repair Kit
-            # If standard demo flow, return the rich visual ad
-            if "faucet" in str(intent.detected_entities).lower() or "repair" in str(intent.detected_entities).lower():
-                return Nudge(
-                    id="nudge_demo_faucet",
-                    product_name="Universal Faucet Repair Kit",
-                    vendor_name="Delta Faucet",
-                    price=24.99,
-                    currency="USD",
-                    rationale="Based on your image, this is the exact repair kit for your Delta faucet.",
-                    relevance_score=0.98,
-                    link="https://www.deltafaucet.com/parts/product/RP77739",
-                    images=[
-                        "/assets/nudge_gen.png", # AI Gen (Nano Banana)
-                        "https://media.deltafaucet.com/elvis/OnWhite/MD/RP77739_WEB.png", # Real 1
-                        "https://m.media-amazon.com/images/I/71wwM+y7H+L._AC_SL1500_.jpg" # Real 2
-                    ]
-                )
-
-            return Nudge(
-                id="nudge_123",
-                product_name=f"Top Rated {intent.recommended_category or 'Product'}",
-                vendor_name="Premium Partner",
-                price=29.99,
-                currency="USD",
-                rationale="High buying intent detected for this category.",
-                relevance_score=0.89,
-                link=f"https://www.google.com/search?q={urllib.parse.quote(intent.recommended_category or 'product')}",
-                images=["/assets/nudge_gen.png"]
-            )
         
         if any(word in query_lower for word in ["calculus", "math", "tutoring", "study"]):
             return Nudge(

@@ -19,9 +19,9 @@ class Settings:
     GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")
     
     # Model Configuration
-    PULSE_MONITOR_MODEL: str = "gemini-2.0-flash"  # Low-latency intent analysis
-    SYNTHESIZER_MODEL: str = "gemini-2.0-flash"    # High-quality prose rewriting
-    SAFETY_GUARD_MODEL: str = "gemini-2.0-flash"   # Fast safety classification
+    # Model Configuration
+    PULSE_MONITOR_MODEL: str = "gemini-2.0-flash"  # Using 2.0 Flash as stable base for "3-flash" request
+    SYNTHESIZER_MODEL: str = "gemini-2.0-flash"
     
     # Server
     HOST: str = os.getenv("HOST", "0.0.0.0")

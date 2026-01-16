@@ -131,7 +131,7 @@ class PulseMonitor:
     def __init__(self):
         self.model = settings.PULSE_MONITOR_MODEL
     
-    async def analyze(self, messages: list[Message], image: str = None, demo_mode: bool = False) -> IntentAnalysis:
+    async def analyze(self, messages: list[Message], image: str = None) -> IntentAnalysis:
         """
         Analyze conversation for patterns and intent.
         Uses different strategies based on conversation length or presence of image.
@@ -142,12 +142,12 @@ class PulseMonitor:
 
         if len(messages) < 3:
             # Early conversation: use quick single-message analysis
-            return await self._quick_analyze(messages[-1] if messages else None, demo_mode=demo_mode)
+            return await self._quick_analyze(messages[-1] if messages else None)
         
         # Longer conversation: use full pattern analysis
         return await self._pattern_analyze(messages)
     
-    async def _quick_analyze(self, message: Message | None, demo_mode: bool = False) -> IntentAnalysis:
+    async def _quick_analyze(self, message: Message | None) -> IntentAnalysis:
         """Quick analysis for short conversations."""
         if not message:
             return self._default_analysis()
@@ -180,11 +180,7 @@ class PulseMonitor:
                 struggle = StruggleState.NONE
                 propensity = 10
             
-            # DEMO MODE OVERRIDE: If commercial intent found, force max propensity
-            if demo_mode and intent in [IntentBucket.COMMERCIAL, IntentBucket.TRANSACTIONAL]:
-                propensity = 99
-                struggle = StruggleState.HIGH # Force struggle to ensure trigger logic passes
-                print(f"DEMO MODE: Forced propensity to {propensity} for '{message.content}'")
+
 
             # Check safety
             is_safe = data.get("is_safe_for_ads", True)

@@ -11,7 +11,7 @@ export const ChatInterface = () => {
     const [isLoading, setIsLoading] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    const [demoMode, setDemoMode] = useState(false);
+
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -42,8 +42,7 @@ export const ChatInterface = () => {
                 },
                 body: JSON.stringify({
                     message: text,
-                    image: image,
-                    demo_mode: demoMode
+                    image: image
                 }),
             });
 
@@ -108,16 +107,7 @@ export const ChatInterface = () => {
                 }}>
                     AXON
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <label className="relative inline-flex items-center cursor-pointer">
-                            <input
-                                type="checkbox"
-                                className="sr-only peer"
-                                checked={demoMode}
-                                onChange={(e) => setDemoMode(e.target.checked)}
-                            />
-                            <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
-                            <span className="ml-2 text-xs font-medium text-gray-500">Demo Mode</span>
-                        </label>
+                        {/* Demo Mode removed for Universal Dynamic Ads */}
                     </div>
                 </div>
                 <button
