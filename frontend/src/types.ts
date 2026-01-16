@@ -2,6 +2,8 @@ export interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  image?: string;
+  nudge?: NudgeDetails;
   timestamp: string;
 }
 
@@ -16,6 +18,8 @@ export interface NudgeDetails {
   product: string;
   vendor: string;
   relevance: string;
+  link: string;
+  images?: string[];
 }
 
 export interface ChatResponse {

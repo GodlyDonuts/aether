@@ -38,7 +38,20 @@ export const MessageBubble = ({ message }: MessageBubbleProps) => {
                 }}
             >
                 {isUser ? (
-                    message.content
+                    <div>
+                        {message.image && (
+                            <img
+                                src={message.image}
+                                alt="User upload"
+                                style={{
+                                    maxWidth: '100%',
+                                    borderRadius: '12px',
+                                    marginBottom: message.content ? '8px' : '0'
+                                }}
+                            />
+                        )}
+                        {message.content}
+                    </div>
                 ) : (
                     <ReactMarkdown
                         remarkPlugins={[remarkMath]}
@@ -67,6 +80,44 @@ export const MessageBubble = ({ message }: MessageBubbleProps) => {
                     >
                         {message.content}
                     </ReactMarkdown>
+                )}
+                {/* Visual Ad Carousel */}
+                {!isUser && message.nudge && message.nudge.images && message.nudge.images.length > 0 && (
+                    <div style={{ marginTop: '16px', overflowX: 'auto', display: 'flex', gap: '8px', paddingBottom: '4px' }}>
+                        {message.nudge.images.map((img, i) => (
+                            <div key={i} style={{
+                                minWidth: '160px',
+                                height: '120px',
+                                borderRadius: '12px',
+                                overflow: 'hidden',
+                                border: '1px solid rgba(0,0,0,0.05)',
+                                position: 'relative'
+                            }}>
+                                <img
+                                    src={img}
+                                    alt={`Product ${i + 1}`}
+                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                />
+                                {i === 0 && (
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: '6px',
+                                        left: '6px',
+                                        background: 'rgba(0,0,0,0.6)',
+                                        backdropFilter: 'blur(4px)',
+                                        color: 'white',
+                                        fontSize: '9px',
+                                        fontWeight: 600,
+                                        padding: '2px 6px',
+                                        borderRadius: '4px',
+                                        letterSpacing: '0.05em'
+                                    }}>
+                                        AI PERSONALIZED
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
                 )}
             </div>
             <style>{`

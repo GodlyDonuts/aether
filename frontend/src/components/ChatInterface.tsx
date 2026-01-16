@@ -3,10 +3,15 @@ import type { Message, ChatResponse } from '../types';
 import { MessageBubble } from './MessageBubble';
 import { GlassInput } from './GlassInput';
 
+import { useNavigate } from 'react-router-dom';
+
 export const ChatInterface = () => {
+    const navigate = useNavigate();
     const [messages, setMessages] = useState<Message[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+
+    const [demoMode, setDemoMode] = useState(false);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -16,11 +21,13 @@ export const ChatInterface = () => {
         scrollToBottom();
     }, [messages]);
 
-    const handleSend = async (text: string) => {
+    const handleSend = async (text: string, image?: string) => {
+        // ... (rest of function unchanged)
         const userMsg: Message = {
             id: Date.now().toString(),
             role: 'user',
             content: text,
+            image: image,
             timestamp: new Date().toISOString()
         };
 
@@ -33,7 +40,11 @@ export const ChatInterface = () => {
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ message: text }),
+                body: JSON.stringify({
+                    message: text,
+                    image: image,
+                    demo_mode: demoMode
+                }),
             });
 
             if (!response.ok) {
@@ -46,6 +57,7 @@ export const ChatInterface = () => {
                 id: Date.now().toString() + '_ai',
                 role: 'assistant',
                 content: data.response,
+                nudge: data.nudge_details,
                 timestamp: new Date().toISOString()
             };
 
@@ -75,20 +87,56 @@ export const ChatInterface = () => {
             alignItems: 'center',
             position: 'relative'
         }}>
-            {/* Header / Logo - Only visible when minimal */}
-            {messages.length > 0 && (
+            {/* Header / Logo - Always visible now for stats access */}
+            <div style={{
+                position: 'absolute',
+                top: '20px',
+                left: '40px',
+                right: '40px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                zIndex: 10
+            }}>
                 <div style={{
-                    position: 'absolute',
-                    top: '20px',
-                    left: '40px',
                     fontSize: '14px',
                     fontWeight: 600,
                     color: '#86868b',
-                    zIndex: 10
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px'
                 }}>
                     AXON
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                                type="checkbox"
+                                className="sr-only peer"
+                                checked={demoMode}
+                                onChange={(e) => setDemoMode(e.target.checked)}
+                            />
+                            <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                            <span className="ml-2 text-xs font-medium text-gray-500">Demo Mode</span>
+                        </label>
+                    </div>
                 </div>
-            )}
+                <button
+                    onClick={() => navigate('/analytics')}
+                    style={{
+                        padding: '8px 16px',
+                        background: 'rgba(0,0,0,0.05)',
+                        border: 'none',
+                        borderRadius: '20px',
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        color: '#1d1d1f',
+                        cursor: 'pointer',
+                        transition: 'background 0.2s'
+                    }}
+                >
+                    Stats
+                </button>
+            </div>
 
 
             {/* Content Area */}

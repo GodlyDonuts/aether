@@ -96,6 +96,31 @@ Respond with ONLY valid JSON:
 }}
 """
 
+MULTIMODAL_ANALYSIS_PROMPT = """
+Analyze this image and message for commercial intent.
+The user has uploaded an image (e.g., a broken product, a specific item they want).
+
+MESSAGE: {message}
+
+ANALYSIS TASKS:
+1. **Visual Identification**: What exact product/brand/item is in the image? (e.g., "Delta Faucet", "Nike Air Max")
+2. **Issue Detection**: Is something broken or wrong? (e.g., "Leaky handle", "Torn sole")
+3. **Intent Classification**:
+   - COMMERCIAL: Buying a replacement or specific part.
+   - EDUCATIONAL: Learning how to fix it.
+4. **Commercial Opportunity**: What specifically should be recommended? (e.g., "Delta Faucet Repair Kit", "Running Shoes")
+
+Respond with ONLY valid JSON:
+{{
+    "intent_bucket": "commercial|educational|transactional",
+    "detected_entities": ["Visual Entity 1", "Visual Entity 2", "Text Entity"],
+    "commercial_opportunity": "Specific Product/Service to recommend",
+    "propensity_score": 85-100 (High for visual search),
+    "is_safe_for_ads": true,
+    "reasoning": "Visual analysis found X..."
+}}
+"""
+
 
 class PulseMonitor:
     """
@@ -106,19 +131,23 @@ class PulseMonitor:
     def __init__(self):
         self.model = settings.PULSE_MONITOR_MODEL
     
-    async def analyze(self, messages: list[Message]) -> IntentAnalysis:
+    async def analyze(self, messages: list[Message], image: str = None, demo_mode: bool = False) -> IntentAnalysis:
         """
         Analyze conversation for patterns and intent.
-        Uses different strategies based on conversation length.
+        Uses different strategies based on conversation length or presence of image.
         """
+        if image:
+            # Multimodal analysis takes precedence
+            return await self._multimodal_analyze(messages[-1] if messages else None, image)
+
         if len(messages) < 3:
             # Early conversation: use quick single-message analysis
-            return await self._quick_analyze(messages[-1] if messages else None)
+            return await self._quick_analyze(messages[-1] if messages else None, demo_mode=demo_mode)
         
         # Longer conversation: use full pattern analysis
         return await self._pattern_analyze(messages)
     
-    async def _quick_analyze(self, message: Message | None) -> IntentAnalysis:
+    async def _quick_analyze(self, message: Message | None, demo_mode: bool = False) -> IntentAnalysis:
         """Quick analysis for short conversations."""
         if not message:
             return self._default_analysis()
@@ -150,6 +179,12 @@ class PulseMonitor:
             else:
                 struggle = StruggleState.NONE
                 propensity = 10
+            
+            # DEMO MODE OVERRIDE: If commercial intent found, force max propensity
+            if demo_mode and intent in [IntentBucket.COMMERCIAL, IntentBucket.TRANSACTIONAL]:
+                propensity = 99
+                struggle = StruggleState.HIGH # Force struggle to ensure trigger logic passes
+                print(f"DEMO MODE: Forced propensity to {propensity} for '{message.content}'")
 
             # Check safety
             is_safe = data.get("is_safe_for_ads", True)
@@ -234,6 +269,34 @@ class PulseMonitor:
             import traceback
             traceback.print_exc()
             return self._default_analysis(f"Pattern analysis error: {e}")
+            
+    async def _multimodal_analyze(self, message: Message | None, image: str) -> IntentAnalysis:
+        """Analyze image and text for intent."""
+        msg_content = message.content if message else "No text provided"
+        prompt = MULTIMODAL_ANALYSIS_PROMPT.format(message=msg_content)
+        
+        try:
+            response = await gemini.generate(
+                prompt=prompt,
+                image_b64=image,
+                model=self.model,
+                temperature=0.1,
+                max_tokens=300,
+            )
+            
+            data = self._parse_json(response)
+            
+            return IntentAnalysis(
+                intent_bucket=IntentBucket(data.get("intent_bucket", "commercial")),
+                struggle_state=StruggleState.MODERATE, # Visual search usually implies need
+                propensity_score=data.get("propensity_score", 90),
+                detected_entities=data.get("detected_entities", []),
+                recommended_category=data.get("commercial_opportunity"),
+                reasoning=data.get("reasoning", "Visual analysis"),
+                is_safe_for_ads=data.get("is_safe_for_ads", True),
+            )
+        except Exception as e:
+            return self._default_analysis(f"Multimodal analysis error: {e}")
     
     def _calculate_pattern_propensity(self, data: dict) -> int:
         """

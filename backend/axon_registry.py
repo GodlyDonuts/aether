@@ -153,51 +153,83 @@ class AXONRegistry:
         
         return nudge
 
-    def _get_mock_result(self, query: str) -> dict:
+    def _get_mock_result(self, query: str, intent: IntentAnalysis) -> Nudge:
         """
         Return mock shopping data for demo purposes if API fails/missing.
         """
         query_lower = query.lower()
         
         if any(word in query_lower for word in ["faucet", "plumbing", "wrench", "pipe", "repair"]):
-            return {
-                "title": "Delta Faucet Repair Kit - Complete Set",
-                "source": "Home Depot",
-                "price": "$24.99",
-                "rating": 4.7,
-                "local_availability": "In stock at nearby store",
-                "link": "https://www.homedepot.com/b/Plumbing/Delta/N-5yc1vZbqewZ1z0v",
-            }
+            # DEMO HARDCODING for Faucet/Repair Kit
+            # If standard demo flow, return the rich visual ad
+            if "faucet" in str(intent.detected_entities).lower() or "repair" in str(intent.detected_entities).lower():
+                return Nudge(
+                    id="nudge_demo_faucet",
+                    product_name="Universal Faucet Repair Kit",
+                    vendor_name="Delta Faucet",
+                    price=24.99,
+                    currency="USD",
+                    rationale="Based on your image, this is the exact repair kit for your Delta faucet.",
+                    relevance_score=0.98,
+                    link="https://www.deltafaucet.com/parts/product/RP77739",
+                    images=[
+                        "/assets/nudge_gen.png", # AI Gen (Nano Banana)
+                        "https://media.deltafaucet.com/elvis/OnWhite/MD/RP77739_WEB.png", # Real 1
+                        "https://m.media-amazon.com/images/I/71wwM+y7H+L._AC_SL1500_.jpg" # Real 2
+                    ]
+                )
+
+            return Nudge(
+                id="nudge_123",
+                product_name=f"Top Rated {intent.recommended_category or 'Product'}",
+                vendor_name="Premium Partner",
+                price=29.99,
+                currency="USD",
+                rationale="High buying intent detected for this category.",
+                relevance_score=0.89,
+                link=f"https://www.google.com/search?q={urllib.parse.quote(intent.recommended_category or 'product')}",
+                images=["/assets/nudge_gen.png"]
+            )
         
         if any(word in query_lower for word in ["calculus", "math", "tutoring", "study"]):
-            return {
-                "title": "Brilliant.org Premium - Learn Calculus Interactively",
-                "source": "Brilliant",
-                "price": "$12.99/mo",
-                "rating": 4.9,
-                "local_availability": "",
-                "link": "https://brilliant.org/courses/calculus-done-right/",
-            }
+            return Nudge(
+                id="nudge_demo_math",
+                product_name="Calculus Done Right",
+                vendor_name="Brilliant.org",
+                price=12.99,
+                currency="USD",
+                rationale="Learn calculus interactively.",
+                relevance_score=0.95,
+                link="https://brilliant.org/courses/calculus-done-right/",
+                images=[]
+            )
         
         if any(word in query_lower for word in ["laptop", "computer", "macbook", "coding"]):
-            return {
-                "title": "MacBook Air M3 - 15 inch",
-                "source": "Apple Store",
-                "price": "$1,299",
-                "rating": 4.8,
-                "local_availability": "Available for pickup today",
-                "link": "https://www.apple.com/macbook-air/",
-            }
+            return Nudge(
+                id="nudge_demo_laptop",
+                product_name="MacBook Air M3 - 15 inch",
+                vendor_name="Apple Store",
+                price=1299.00,
+                currency="USD",
+                rationale="Perfect for coding and creative work.",
+                relevance_score=0.92,
+                link="https://www.apple.com/macbook-air/",
+                images=[]
+            )
         
         # Generic fallback
-        return {
-            "title": f"Top Rated {query.title()} Solution",
-            "source": "Amazon",
-            "price": "$29.99",
-            "rating": 4.5,
-            "local_availability": "Prime delivery available",
-            "link": "https://www.amazon.com/s?k={query}",
-        }
+        return Nudge(
+            id="nudge_generic",
+            product_name=f"Top Rated {query.title()} Solution",
+            vendor_name="Trusted Partner",
+            price=29.99,
+            currency="USD",
+            rationale="Highly relevant to your search.",
+            relevance_score=0.85,
+            link=f"https://www.google.com/search?q={urllib.parse.quote(query)}",
+            images=[]
+        )
+
 
 # Singleton instance
 axon_registry = AXONRegistry()

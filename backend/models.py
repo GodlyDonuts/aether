@@ -52,8 +52,18 @@ class Nudge(BaseModel):
     relevance_score: float = Field(..., ge=0, le=1)
     nudge_text: str
     link: Optional[str] = None
+    images: list[str] = []
     call_to_action: Optional[str] = None
     local_availability: Optional[str] = None
+
+
+class RevenueEvent(BaseModel):
+    """Track a specific revenue generating event."""
+    amount: float
+    source: str  # "nudge_click", "lead_gen", etc.
+    timestamp: datetime = Field(default_factory=datetime.now)
+    intent_bucket: Optional[str] = None
+    session_id: Optional[str] = None
 
 
 class ConversationState(BaseModel):
@@ -62,6 +72,7 @@ class ConversationState(BaseModel):
     messages: list[Message] = Field(default_factory=list)
     current_intent: Optional[IntentAnalysis] = None
     nudges_shown: list[Nudge] = Field(default_factory=list)
+    revenue_events: list[RevenueEvent] = Field(default_factory=list)
     total_revenue_generated: float = 0.0
     created_at: datetime = Field(default_factory=datetime.now)
     
