@@ -33,6 +33,7 @@ class Settings:
     MIN_RELEVANCE_SCORE: float = 0.7  # Minimum ad relevance (70%)
     
     SERP_API_KEY: str = os.getenv("SERP_API_KEY", "")
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379")
     
     @classmethod
     def validate(cls) -> bool:

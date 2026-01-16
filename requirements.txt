@@ -1,20 +1,6 @@
-# Project AXON Dependencies
-
-# Core Framework
-fastapi>=0.109.0
-uvicorn[standard]>=0.27.0
-pydantic>=2.5.0
-
-# Google AI
-google-genai>=1.0.0
-google-cloud-aiplatform>=1.38.0
-
-# Environment
-python-dotenv>=1.0.0
-
-# HTTP Client (for SERP API)
-httpx>=0.26.0
-
-# Future phases
-# google-ads>=23.0.0
-# graphql-core>=3.2.0
+fastapi
+uvicorn
+pydantic
+python-dotenv
+google-generativeai
+redis

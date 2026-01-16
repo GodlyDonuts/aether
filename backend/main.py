@@ -6,8 +6,10 @@ The Semantic Monetization Layer for Generative Intelligence
 import uuid
 from datetime import datetime
 from typing import Optional
+import asyncio
+import json
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -17,9 +19,12 @@ from backend.models import ConversationState, IntentAnalysis, Nudge, RevenueEven
 from backend.pulse_monitor import pulse_monitor
 from backend.axon_registry import axon_registry
 from backend.synthesizer import synthesizer
+from backend.redis_client import RedisClient
 
 # Validate configuration on startup
 settings.validate()
+
+from backend.admin_routes import router as admin_router
 
 app = FastAPI(
     title="Project AXON",
@@ -30,11 +35,80 @@ app = FastAPI(
 # CORS middleware for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Allow all origins for dev simplicity
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(admin_router)
+
+# WebSocket Connection Manager
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: dict):
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except:
+                pass
+
+manager = ConnectionManager()
+
+@app.on_event("startup")
+async def startup_event():
+    # Initialize Redis
+    RedisClient.get_instance()
+
+@app.middleware("http")
+async def track_requests(request: Request, call_next):
+    # Track stats in Redis
+    redis = await RedisClient.get_instance()
+    await redis.incr("stats:total_requests")
+    
+    # Process request
+    response = await call_next(request)
+    
+    # Broadcast traffic event (fire and forget)
+    event = {
+        "type": "traffic",
+        "path": request.url.path,
+        "method": request.method,
+        "status": response.status_code,
+        "timestamp": datetime.now().isoformat(),
+        "ip": request.client.host if request.client else "unknown"
+    }
+    
+    # Publish to internal Redis channel (optional, used if we had multiple worker nodes)
+    await redis.publish("events", json.dumps(event))
+    
+    # Directly broadcast to connected websockets for the demo
+    # In a real scaled app, a separate worker would subscribe to Redis and push to WS
+    try:
+        await manager.broadcast(event)
+    except:
+        pass
+        
+    return response
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            # Keep connection alive, listen for client messages if any
+            data = await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
 
 # In-memory session storage (replace with Firestore in production)
 sessions: dict[str, ConversationState] = {}
